@@ -53,6 +53,7 @@ export default function EnemyBox({ position, onHit, onApiReady, playerPositionRe
   const [flickerOpacity, setFlickerOpacity] = useState(1)
   const [tooCloseWarning, setTooCloseWarning] = useState(false)
   const flickerTime = useRef(0)
+  const warningTimeoutRef = useRef<number | null>(null)
 
   const onEnemyShootRef = useRef(onEnemyShoot)
   useEffect(() => { onEnemyShootRef.current = onEnemyShoot }, [onEnemyShoot])
@@ -91,6 +92,9 @@ export default function EnemyBox({ position, onHit, onApiReady, playerPositionRe
   useEffect(() => {
     if (!projectileActive && onProjectileReturn) {
       returnDelay.current = PROJECTILE_RETURN_DELAY
+    }
+    return () => {
+      if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current)
     }
   }, [projectileActive, onProjectileReturn])
 
@@ -192,7 +196,8 @@ export default function EnemyBox({ position, onHit, onApiReady, playerPositionRe
         shootCooldown.current = SHOOT_COOLDOWN
       } else if (dist < MIN_SHOOT_DISTANCE) {
         setTooCloseWarning(true)
-        setTimeout(() => setTooCloseWarning(false), WARNING_DURATION)
+        if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current)
+        warningTimeoutRef.current = setTimeout(() => setTooCloseWarning(false), WARNING_DURATION)
       }
     }
   })

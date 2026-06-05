@@ -46,16 +46,26 @@ export default function PlayerBox({ position, onShoot, onApiReady, onHitApiReady
   const [flickerOpacity, setFlickerOpacity] = useState(1)
   const [tooCloseWarning, setTooCloseWarning] = useState(false)
   const flickerTime = useRef(0)
+  const unsubscribePosition = useRef<(() => void) | null>(null)
+  const unsubscribeRotation = useRef<(() => void) | null>(null)
+  const unsubscribeQuaternion = useRef<(() => void) | null>(null)
+  const warningTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (onApiReady) {
       onApiReady(api)
-      api.position.subscribe((p: [number, number, number]) => {
+      unsubscribePosition.current = api.position.subscribe((p: [number, number, number]) => {
         playerPosRef.current = p
       })
     }
     if (onHitApiReady) {
       onHitApiReady({ handleHit })
+    }
+    return () => {
+      if (unsubscribePosition.current) unsubscribePosition.current()
+      if (unsubscribeRotation.current) unsubscribeRotation.current()
+      if (unsubscribeQuaternion.current) unsubscribeQuaternion.current()
+      if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current)
     }
   }, [api, onApiReady, onHitApiReady])
 
@@ -86,7 +96,8 @@ export default function PlayerBox({ position, onShoot, onApiReady, onHitApiReady
               onShoot()
             } else {
               setTooCloseWarning(true)
-              setTimeout(() => setTooCloseWarning(false), WARNING_DURATION)
+              if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current)
+              warningTimeoutRef.current = setTimeout(() => setTooCloseWarning(false), WARNING_DURATION)
             }
           }
           break
@@ -107,8 +118,8 @@ export default function PlayerBox({ position, onShoot, onApiReady, onHitApiReady
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
 
-    api.rotation.subscribe((r) => (rotation.current = r))
-    api.quaternion.subscribe((q) => (quaternion.current = q))
+    unsubscribeRotation.current = api.rotation.subscribe((r) => (rotation.current = r))
+    unsubscribeQuaternion.current = api.quaternion.subscribe((q) => (quaternion.current = q))
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
