@@ -1,23 +1,32 @@
 {
-  "name": "threejs-game",
+  "name": "the-duel",
   "version": "1.0.0",
   "description": "",
-  "main": "main.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@react-three/cannon": "^6.6.0",
+    "@react-three/drei": "^9.122.0",
+    "@react-three/fiber": "^8.18.0",
     "cannon-es": "^0.20.0",
     "cannon-es-debugger": "^1.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "three": "^0.153.0",
     "yuka": "^0.7.8"
   },
   "devDependencies": {
+    "@types/react": "^18.2.15",
+    "@types/react-dom": "^18.2.7",
+    "@types/three": "^0.153.0",
+    "@vitejs/plugin-react": "^4.0.3",
+    "typescript": "^5.0.2",
     "vite": "^4.4.1"
   }
 }
