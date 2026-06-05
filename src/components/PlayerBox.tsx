@@ -1,15 +1,25 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { useBox } from '@react-three/cannon'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+
+const MIN_SHOOT_DISTANCE = 4
+const MOVE_SPEED = 4
+const ROTATE_SPEED = 0.05
+const FLASH_DURATION = 0.15
+const TOTAL_FLASHES = 3
+const WARNING_DURATION = 200
 
 interface PlayerBoxProps {
   position: [number, number, number]
   onShoot: () => void
   onApiReady?: (api: any) => void
+  onHitApiReady?: (payload: { handleHit: (isFinalHit: boolean) => void }) => void
+  gameActive?: boolean
+  enemyPositionRef?: React.MutableRefObject<[number, number, number]>
 }
 
-export default function PlayerBox({ position, onShoot, onApiReady }: PlayerBoxProps) {
+export default function PlayerBox({ position, onShoot, onApiReady, onHitApiReady, gameActive = true, enemyPositionRef }: PlayerBoxProps) {
   const [ref, api] = useBox(() => ({
     mass: 1,
     position,
@@ -29,13 +39,31 @@ export default function PlayerBox({ position, onShoot, onApiReady }: PlayerBoxPr
   })
 
   const rotation = useRef([0, 0, 0])
+  const playerPosRef = useRef(position)
   const quaternion = useRef([0, 0, 0, 1])
+  const [isFlickering, setIsFlickering] = useState(false)
+  const [isFinalHit, setIsFinalHit] = useState(false)
+  const [flickerOpacity, setFlickerOpacity] = useState(1)
+  const [tooCloseWarning, setTooCloseWarning] = useState(false)
+  const flickerTime = useRef(0)
 
   useEffect(() => {
     if (onApiReady) {
       onApiReady(api)
+      api.position.subscribe((p: [number, number, number]) => {
+        playerPosRef.current = p
+      })
     }
-  }, [api, onApiReady])
+    if (onHitApiReady) {
+      onHitApiReady({ handleHit })
+    }
+  }, [api, onApiReady, onHitApiReady])
+
+  const handleHit = (isFinalHit: boolean) => {
+    setIsFlickering(true)
+    setIsFinalHit(isFinalHit)
+    flickerTime.current = 0
+  }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -46,7 +74,22 @@ export default function PlayerBox({ position, onShoot, onApiReady }: PlayerBoxPr
         case 'KeyS': keys.current.s = true; break
         case 'ArrowLeft': keys.current.arrowLeft = true; break
         case 'ArrowRight': keys.current.arrowRight = true; break
-        case 'Space': onShoot(); break
+        case 'Space':
+          if (gameActive) {
+            const canShoot = !enemyPositionRef || (() => {
+              const dx = enemyPositionRef.current[0] - playerPosRef.current[0]
+              const dz = enemyPositionRef.current[2] - playerPosRef.current[2]
+              const dist = Math.sqrt(dx * dx + dz * dz)
+              return dist >= MIN_SHOOT_DISTANCE
+            })()
+            if (canShoot) {
+              onShoot()
+            } else {
+              setTooCloseWarning(true)
+              setTimeout(() => setTooCloseWarning(false), WARNING_DURATION)
+            }
+          }
+          break
       }
     }
 
@@ -73,33 +116,57 @@ export default function PlayerBox({ position, onShoot, onApiReady }: PlayerBoxPr
     }
   }, [api, onShoot])
 
-  useFrame(() => {
-    const moveSpeed = 1.2
-    const rotateSpeed = 0.05
+  useFrame((_, delta) => {
+    if (isFlickering) {
+      flickerTime.current += delta
+      const totalDuration = FLASH_DURATION * 2 * TOTAL_FLASHES
+      const flashIndex = Math.floor(flickerTime.current / FLASH_DURATION)
+      setFlickerOpacity(flashIndex % 2 === 0 ? 0.5 : 1)
+      
+      if (flickerTime.current > totalDuration) {
+        setIsFlickering(false)
+        setIsFinalHit(false)
+        setFlickerOpacity(1)
+      }
+    }
 
-    // Cumulative directional controls (W=front/-Z, S=back/+Z, A=left/-X, D=right/+X)
-    let vx = 0
-    let vz = 0
-    if (keys.current.w) vz -= moveSpeed
-    if (keys.current.s) vz += moveSpeed
-    if (keys.current.a) vx -= moveSpeed
-    if (keys.current.d) vx += moveSpeed
-    api.velocity.set(vx, 0, vz)
+    if (!gameActive) {
+      api.velocity.set(0, 0, 0)
+      return
+    }
 
-    // Rotation with arrow keys - use quaternion multiplication for unlimited rotation
     if (keys.current.arrowLeft || keys.current.arrowRight) {
-      const delta = keys.current.arrowLeft ? rotateSpeed : -rotateSpeed
+      const delta = keys.current.arrowLeft ? ROTATE_SPEED : -ROTATE_SPEED
       const deltaQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), delta)
       const currentQ = new THREE.Quaternion(...quaternion.current as [number, number, number, number])
       currentQ.multiply(deltaQ)
       api.quaternion.set(currentQ.x, currentQ.y, currentQ.z, currentQ.w)
     }
+
+    const q = new THREE.Quaternion(...quaternion.current as [number, number, number, number])
+    let local = new THREE.Vector3()
+    if (keys.current.w) local.z -= MOVE_SPEED
+    if (keys.current.s) local.z += MOVE_SPEED
+    if (keys.current.a) local.x -= MOVE_SPEED
+    if (keys.current.d) local.x += MOVE_SPEED
+    local.applyQuaternion(q)
+    api.velocity.set(local.x, 0, local.z)
   })
 
   return (
     <mesh ref={ref as any} castShadow receiveShadow>
       <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial color="#00ff00" />
+      <meshStandardMaterial
+        color={
+          isFlickering
+            ? (isFinalHit ? '#ff0000' : '#ffffff')
+            : tooCloseWarning
+            ? '#ffaa00'
+            : '#00ff00'
+        }
+        transparent={isFlickering}
+        opacity={isFlickering ? flickerOpacity : 1}
+      />
     </mesh>
   )
 }
