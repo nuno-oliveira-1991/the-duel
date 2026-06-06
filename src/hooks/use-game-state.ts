@@ -10,14 +10,18 @@ export function useGameState() {
   const [enemyWins, setEnemyWins] = useState(0)
   const [gameOver, setGameOver] = useState(false)
   const [titleScreen, setTitleScreen] = useState(true)
+  const [paused, setPaused] = useState(false)
   const [winner, setWinner] = useState<'player' | 'enemy' | null>(null)
+  const [gameOverTime, setGameOverTime] = useState<number | null>(null)
   const playerApi = useRef<any>(null)
+  const enemyApi = useRef<any>(null)
 
-  const gameActive = !titleScreen && !gameOver
+  const gameActive = !titleScreen && !gameOver && !paused
 
   const handleGameOver = (w: 'player' | 'enemy') => {
     setWinner(w)
     setGameOver(true)
+    setGameOverTime(Date.now())
     if (w === 'player') {
       setPlayerWins(prev => prev + 1)
     } else {
@@ -30,8 +34,12 @@ export function useGameState() {
     setPlayerHealth(PLAYER_MAX_HEALTH)
     setGameOver(false)
     setWinner(null)
+    setGameOverTime(null)
     if (playerApi.current) {
       playerApi.current.position.set(...newSpawns.player)
+    }
+    if (enemyApi.current) {
+      enemyApi.current.position.set(...newSpawns.enemy)
     }
   }
 
@@ -42,12 +50,16 @@ export function useGameState() {
     enemyWins,
     gameOver,
     titleScreen,
+    paused,
     winner,
+    gameOverTime,
     gameActive,
     playerApi,
+    enemyApi,
     setEnemyHealth,
     setPlayerHealth,
     setTitleScreen,
+    setPaused,
     handleGameOver,
     handleRestart
   }

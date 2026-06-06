@@ -4,22 +4,33 @@ export function useSpawnPositions() {
   const [spawns, setSpawns] = useState(() => randomSpawnPositions())
 
   const randomizeSpawns = () => {
-    setSpawns(randomSpawnPositions())
+    const newSpawns = randomSpawnPositions()
+    setSpawns(newSpawns)
+    return newSpawns
   }
 
   return { spawns, randomizeSpawns }
 }
 
 function randomSpawnPositions(): { player: [number, number, number], enemy: [number, number, number] } {
-  const range = 3
-  const minDistance = 5
-  const px = (Math.random() - 0.5) * 2 * range
-  const pz = (Math.random() - 0.5) * 2 * range
-  let ex = (Math.random() - 0.5) * 2 * range
-  let ez = (Math.random() - 0.5) * 2 * range
-  while (Math.sqrt((ex - px) ** 2 + (ez - pz) ** 2) < minDistance) {
-    ex = (Math.random() - 0.5) * 2 * range
-    ez = (Math.random() - 0.5) * 2 * range
+  const corners = [
+    [-4, -4],
+    [-4, 4],
+    [4, -4],
+    [4, 4]
+  ]
+
+  const shuffled = corners.sort(() => Math.random() - 0.5)
+  const playerCorner = shuffled[0]
+  const enemyCorner = shuffled[1]
+
+  const playerOffset = 0.5
+  const enemyOffset = 0.5
+
+  const result = {
+    player: [playerCorner[0] + playerOffset, 0, playerCorner[1] + playerOffset] as [number, number, number],
+    enemy: [enemyCorner[0] + enemyOffset, 0, enemyCorner[1] + enemyOffset] as [number, number, number]
   }
-  return { player: [px, 0, pz], enemy: [ex, 0, ez] }
+
+  return result
 }

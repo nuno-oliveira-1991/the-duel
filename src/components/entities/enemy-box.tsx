@@ -1,28 +1,25 @@
-import { useBox } from '@react-three/cannon'
-import { useRef, useEffect, useState, MutableRefObject } from 'react'
-import { useFrame } from '@react-three/fiber'
 // @ts-ignore
 import * as YUKA from 'yuka'
 import * as THREE from 'three'
+import { useBox } from '@react-three/cannon'
+import { useRef, useEffect, useState, MutableRefObject } from 'react'
+import { useFrame } from '@react-three/fiber'
 
 const GROUND_BOUNDS = { minX: -4.5, maxX: 4.5, minZ: -4.5, maxZ: 4.5 }
 const DESIRED_DISTANCE = 4
-const SHOOT_RANGE = 8
 const SHOOT_COOLDOWN = 2
-const MIN_SHOOT_DISTANCE = 4
 const MAX_SPEED = 3
 const MAX_FORCE = 6
 const PROJECTILE_FLEE_RADIUS = 3
 const Y_FIXED = 0
-const FLASH_DURATION = 0.15
-const TOTAL_FLASHES = 3
+const FLASH_DURATION = 0.083
+const TOTAL_FLASHES = 6
 const WANDER_INTERVAL = 2
 const WANDER_RANGE = 8
 const WANDER_WEIGHT = 0.6
 const FLEE_WEIGHT = 0.8
 const PROJECTILE_FLEE_WEIGHT = 2.5
 const PROJECTILE_RETURN_DELAY = 0.1
-const WARNING_DURATION = 200
 const PROJECTILE_SPAWN_OFFSET = 0.8
 const ROTATION_SMOOTHING = 10
 
@@ -30,6 +27,7 @@ interface EnemyBoxProps {
   position: [number, number, number]
   onHit?: () => void
   onApiReady?: (payload: { handleHit: (isFinalHit: boolean) => void, positionRef: MutableRefObject<THREE.Vector3>, rotationRef: MutableRefObject<[number, number, number]> }) => void
+  onPhysicsApiReady?: (api: any) => void
   playerPositionRef?: MutableRefObject<[number, number, number]>
   projectilePosRef?: MutableRefObject<THREE.Vector3>
   projectileActive?: boolean
@@ -38,10 +36,10 @@ interface EnemyBoxProps {
   onProjectileReturn?: () => void
 }
 
-export default function EnemyBox({ position, onHit, onApiReady, playerPositionRef, projectilePosRef, projectileActive, onEnemyShoot, gameActive = true, onProjectileReturn }: EnemyBoxProps) {
+export default function EnemyBox({ position, onHit, onApiReady, onPhysicsApiReady, playerPositionRef, projectilePosRef, projectileActive, onEnemyShoot, gameActive = true, onProjectileReturn }: EnemyBoxProps) {
   const [ref, api] = useBox(() => ({
     mass: 0,
-    position,
+    position: [position[0], 0, position[2]],
     args: [1, 1, 1],
     type: 'Kinematic',
   }))
@@ -50,13 +48,14 @@ export default function EnemyBox({ position, onHit, onApiReady, playerPositionRe
   const rotationRef = useRef<[number, number, number]>([0, 0, 0])
   const [isFlickering, setIsFlickering] = useState(false)
   const [isFinalHit, setIsFinalHit] = useState(false)
-  const [flickerOpacity, setFlickerOpacity] = useState(1)
-  const [tooCloseWarning, setTooCloseWarning] = useState(false)
+  const [flickerColor, setFlickerColor] = useState('#ffffff')
   const flickerTime = useRef(0)
-  const warningTimeoutRef = useRef<number | null>(null)
+  const isFlickeringRef = useRef(false)
 
   const onEnemyShootRef = useRef(onEnemyShoot)
   useEffect(() => { onEnemyShootRef.current = onEnemyShoot }, [onEnemyShoot])
+  const onPhysicsApiReadyRef = useRef(onPhysicsApiReady)
+  useEffect(() => { onPhysicsApiReadyRef.current = onPhysicsApiReady }, [onPhysicsApiReady])
   const vehicle = useRef<any>(null)
   const manager = useRef<any>(null)
   const shootCooldown = useRef(SHOOT_COOLDOWN)
@@ -74,27 +73,43 @@ export default function EnemyBox({ position, onHit, onApiReady, playerPositionRe
     mgr.add(v)
     manager.current = mgr
     vehicle.current = v
+    currentPos.current.set(position[0], Y_FIXED, position[2])
+    api.position.set(position[0], Y_FIXED, position[2])
+
+    if (groupRef.current) {
+      groupRef.current.position.set(position[0], Y_FIXED, position[2])
+    }
+
+    if (onPhysicsApiReadyRef.current) {
+      onPhysicsApiReadyRef.current(api)
+    }
 
     return () => { mgr.clear() }
-  }, [])
+  }, [position, api])
 
   const handleHit = (isFinalHit: boolean) => {
-    setIsFlickering(true)
-    setIsFinalHit(isFinalHit)
-    flickerTime.current = 0
     if (onHit) onHit()
+    if (isFlickeringRef.current) {
+      if (isFinalHit) {
+        setIsFinalHit(true)
+      }
+      return
+    }
+    flickerTime.current = 0
+    setIsFlickering(true)
+    isFlickeringRef.current = true
+    setIsFinalHit(isFinalHit)
   }
 
   useEffect(() => {
-    if (onApiReady) onApiReady({ handleHit, positionRef: currentPos, rotationRef })
-  }, [onApiReady])
+    if (onApiReady) {
+      onApiReady({ handleHit, positionRef: currentPos, rotationRef })
+    }
+  }, [onApiReady, handleHit])
 
   useEffect(() => {
     if (!projectileActive && onProjectileReturn) {
       returnDelay.current = PROJECTILE_RETURN_DELAY
-    }
-    return () => {
-      if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current)
     }
   }, [projectileActive, onProjectileReturn])
 
@@ -103,20 +118,33 @@ export default function EnemyBox({ position, onHit, onApiReady, playerPositionRe
       flickerTime.current += delta
       const totalDuration = FLASH_DURATION * 2 * TOTAL_FLASHES
       const flashIndex = Math.floor(flickerTime.current / FLASH_DURATION)
-      setFlickerOpacity(flashIndex % 2 === 0 ? 0.5 : 1)
-      
+
+      if (isFinalHit) {
+        setFlickerColor(flashIndex % 2 === 0 ? '#ff0000' : '#0000ff')
+      } else {
+        setFlickerColor(flashIndex % 2 === 0 ? '#ffffff' : '#0000ff')
+      }
+
       if (flickerTime.current > totalDuration) {
         setIsFlickering(false)
+        isFlickeringRef.current = false
         setIsFinalHit(false)
-        setFlickerOpacity(1)
+        setFlickerColor('#ffffff')
       }
     }
-
-    if (!gameActive) return
 
     const v = vehicle.current
     const mgr = manager.current
     if (!v || !mgr) return
+
+    if (!gameActive) {
+      currentPos.current.set(v.position.x, Y_FIXED, v.position.z)
+      api.position.set(v.position.x, Y_FIXED, v.position.z)
+      if (groupRef.current) {
+        groupRef.current.position.set(v.position.x, Y_FIXED, v.position.z)
+      }
+      return
+    }
 
     const pp = playerPositionRef?.current
     const projPos = projectilePosRef?.current
@@ -186,19 +214,12 @@ export default function EnemyBox({ position, onHit, onApiReady, playerPositionRe
     if (pp && onEnemyShootRef.current && shootCooldown.current <= 0 && returnDelay.current <= 0) {
       const dx = pp[0] - v.position.x
       const dz = pp[2] - v.position.z
-      const dist = Math.sqrt(dx * dx + dz * dz)
-      if (dist < SHOOT_RANGE && dist >= MIN_SHOOT_DISTANCE) {
-        const direction = new THREE.Vector3(dx, 0, dz).normalize()
-        onEnemyShootRef.current(
-          [v.position.x + direction.x * PROJECTILE_SPAWN_OFFSET, Y_FIXED, v.position.z + direction.z * PROJECTILE_SPAWN_OFFSET],
-          direction
-        )
-        shootCooldown.current = SHOOT_COOLDOWN
-      } else if (dist < MIN_SHOOT_DISTANCE) {
-        setTooCloseWarning(true)
-        if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current)
-        warningTimeoutRef.current = setTimeout(() => setTooCloseWarning(false), WARNING_DURATION)
-      }
+      const direction = new THREE.Vector3(dx, 0, dz).normalize()
+      onEnemyShootRef.current(
+        [v.position.x + direction.x * PROJECTILE_SPAWN_OFFSET, Y_FIXED, v.position.z + direction.z * PROJECTILE_SPAWN_OFFSET],
+        direction
+      )
+      shootCooldown.current = SHOOT_COOLDOWN
     }
   })
 
@@ -214,13 +235,9 @@ export default function EnemyBox({ position, onHit, onApiReady, playerPositionRe
           <meshStandardMaterial
             color={
               isFlickering
-                ? (isFinalHit ? '#ff0000' : '#ffffff')
-                : tooCloseWarning
-                ? '#ffaa00'
+                ? (isFinalHit ? '#ff0000' : flickerColor)
                 : '#0000ff'
             }
-            transparent={isFlickering}
-            opacity={isFlickering ? flickerOpacity : 1}
           />
         </mesh>
       </group>

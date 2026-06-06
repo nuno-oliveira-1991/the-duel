@@ -22,7 +22,7 @@ function getHealthColor(current: number, max: number, mode: 'player' | 'enemy'):
 }
 
 export default function HealthBar({ label, current, max, mode, position }: HealthBarProps) {
-  const positionStyle = position === 'left' 
+  const positionStyle = position === 'left'
     ? { top: '20px', left: '20px' }
     : { top: '20px', right: '20px' }
 

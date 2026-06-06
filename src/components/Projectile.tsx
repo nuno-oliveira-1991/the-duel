@@ -51,6 +51,7 @@ export default function Projectile({
   const firedDir = useRef(new THREE.Vector3(0, 0, -1))
   const isFired = useRef(false)
   const deactivated = useRef(false)
+  const initialRotationSet = useRef(false)
 
   useEffect(() => {
     if (onApiReady) {
@@ -95,6 +96,16 @@ export default function Projectile({
       if (mode === 'player' && getSpawnPosition) {
         const p = getSpawnPosition()
         api.position.set(p[0], p[1], p[2])
+        if (!initialRotationSet.current) {
+          const currentPos = new THREE.Vector3(p[0], p[1], p[2])
+          const center = new THREE.Vector3(0, 0, 0)
+          const direction = new THREE.Vector3().subVectors(center, currentPos)
+          direction.y = 0
+          const angle = Math.atan2(direction.x, direction.z) + Math.PI
+          const targetQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, angle, 0))
+          api.quaternion.set(targetQ.x, targetQ.y, targetQ.z, targetQ.w)
+          initialRotationSet.current = true
+        }
       } else if (mode === 'enemy' && ownerPositionRef && ownerRotationRef) {
         const ownerPos = ownerPositionRef.current
         const ownerRot = ownerRotationRef.current

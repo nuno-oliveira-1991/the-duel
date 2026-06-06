@@ -1,8 +1,13 @@
-import { Canvas } from '@react-three/fiber'
-import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
-import { Physics } from '@react-three/cannon'
-import { useState, useRef, MutableRefObject } from 'react'
 import * as THREE from 'three'
+import { Canvas } from '@react-three/fiber'
+import { Physics } from '@react-three/cannon'
+import { PerspectiveCamera, OrbitControls } from '@react-three/drei'
+import { useState, useRef, MutableRefObject, useCallback } from 'react'
+import { useBox as useBoxCannon } from '@react-three/cannon'
+import { useGameState } from '../hooks/use-game-state'
+import { useKeyboardControls } from '../hooks/use-keyboard-controls'
+import { useSpawnPositions } from '../hooks/use-spawn-positions'
+import { useGameCollision } from '../hooks/use-game-collision'
 import Ground from './ground'
 import PlayerBox from './entities/player-box'
 import EnemyBox from './entities/enemy-box'
@@ -11,11 +16,9 @@ import HealthBar from './ui/health-bar'
 import ScoreDisplay from './ui/score-display'
 import TitleScreen from './ui/title-screen'
 import GameOver from './ui/game-over'
-import { useBox as useBoxCannon } from '@react-three/cannon'
-import { useGameState } from '../hooks/use-game-state'
-import { useKeyboardControls } from '../hooks/use-keyboard-controls'
-import { useSpawnPositions } from '../hooks/use-spawn-positions'
-import { useGameCollision } from '../hooks/use-game-collision'
+import Subtitle from './ui/subtitle'
+import PauseOverlay from './ui/pause-overlay'
+import MobileWarning from './ui/mobile-warning'
 
 const BOUND = 5.0
 const WALL_THICKNESS = 0.2
@@ -39,7 +42,6 @@ function BoundaryWalls() {
   )
 }
 
-
 interface GameContentProps {
   enemyHealth: number
   playerHealth: number
@@ -51,11 +53,14 @@ interface GameContentProps {
   onPlayerHealthChange: (health: number) => void
   onGameOver: (winner: 'player' | 'enemy') => void
   onPlayerApiReady: (api: any) => void
+  onEnemyPhysicsApiReady: (api: any) => void
+  onWarningChange: (warning: string | null) => void
 }
 
-function GameContent({ enemyHealth, playerHealth, playerSpawn, enemySpawn, gameActive, gameOver, onEnemyHealthChange, onPlayerHealthChange, onGameOver, onPlayerApiReady }: GameContentProps) {
+function GameContent({ enemyHealth, playerHealth, playerSpawn, enemySpawn, gameActive, gameOver, onEnemyHealthChange, onPlayerHealthChange, onGameOver, onPlayerApiReady, onEnemyPhysicsApiReady, onWarningChange }: GameContentProps) {
   const [projectileActive, setProjectileActive] = useState(false)
   const [enemyProjectileActive, setEnemyProjectileActive] = useState(false)
+  
   const playerPos = useRef<[number, number, number]>([-3, 0, 3])
   const playerRot = useRef<[number, number, number]>([0, 0, 0])
   const enemyHandleHit = useRef<((isFinalHit: boolean) => void) | null>(null)
@@ -79,15 +84,19 @@ function GameContent({ enemyHealth, playerHealth, playerSpawn, enemySpawn, gameA
     })
   }
 
-  const handleEnemyApiReady = ({ handleHit, positionRef, rotationRef }: { handleHit: (isFinalHit: boolean) => void, positionRef: MutableRefObject<THREE.Vector3>, rotationRef: MutableRefObject<[number, number, number]> }) => {
+  const handleEnemyApiReady = useCallback(({ handleHit, positionRef, rotationRef }: { handleHit: (isFinalHit: boolean) => void, positionRef: MutableRefObject<THREE.Vector3>, rotationRef: MutableRefObject<[number, number, number]> }) => {
     enemyHandleHit.current = handleHit
     enemyCurrentPos.current = positionRef
     enemyRotationRef.current = rotationRef
-  }
+  }, [])
 
-  const handlePlayerApiReady = ({ handleHit }: { handleHit: (isFinalHit: boolean) => void }) => {
+  const handleEnemyPhysicsApiReady = useCallback((api: any) => {
+    onEnemyPhysicsApiReady(api)
+  }, [onEnemyPhysicsApiReady])
+
+  const handlePlayerApiReady = useCallback(({ handleHit }: { handleHit: (isFinalHit: boolean) => void }) => {
     playerHandleHit.current = handleHit
-  }
+  }, [])
 
   const handleProjectileApiReady = (api: any) => {
     projectileApi.current = api
@@ -130,7 +139,6 @@ function GameContent({ enemyHealth, playerHealth, playerSpawn, enemySpawn, gameA
     setProjectileActive(false)
   }
 
-
   const handleEnemyShoot = (position: [number, number, number], direction: THREE.Vector3) => {
     if (!enemyProjectileActive) {
       enemyProjectileSpawnPos.current = position
@@ -167,7 +175,7 @@ function GameContent({ enemyHealth, playerHealth, playerSpawn, enemySpawn, gameA
   return (
     <>
       <PerspectiveCamera makeDefault position={[0, 12, 10]} />
-      <OrbitControls />
+      <OrbitControls enableRotate={false} enablePan={false} />
       
       <ambientLight intensity={0.5} />
       <directionalLight
@@ -188,10 +196,12 @@ function GameContent({ enemyHealth, playerHealth, playerSpawn, enemySpawn, gameA
           onHitApiReady={handlePlayerApiReady}
           gameActive={gameActive}
           enemyPositionRef={enemyCurrentPos.current ? { current: [enemyCurrentPos.current.current.x, enemyCurrentPos.current.current.y, enemyCurrentPos.current.current.z] } : undefined}
+          onWarningChange={onWarningChange}
         />
-        <EnemyBox 
-          position={enemySpawn} 
+        <EnemyBox
+          position={enemySpawn}
           onApiReady={handleEnemyApiReady}
+          onPhysicsApiReady={handleEnemyPhysicsApiReady}
           playerPositionRef={playerPos}
           projectilePosRef={projectilePos}
           projectileActive={enemyProjectileActive}
@@ -227,32 +237,40 @@ function GameContent({ enemyHealth, playerHealth, playerSpawn, enemySpawn, gameA
 export default function GameScene() {
   const gameState = useGameState()
   const { spawns, randomizeSpawns } = useSpawnPositions()
+  const [subtitle, setSubtitle] = useState<string | null>(null)
   
   const handleStart = () => {
     gameState.setTitleScreen(false)
   }
 
   const handleRestart = () => {
-    randomizeSpawns()
-    gameState.handleRestart(spawns)
+    const newSpawns = randomizeSpawns()
+    gameState.handleRestart(newSpawns)
   }
 
-  useKeyboardControls(gameState.titleScreen, gameState.gameOver, handleStart, handleRestart)
+  const handlePauseToggle = () => {
+    gameState.setPaused(prev => !prev)
+  }
+
+  useKeyboardControls(gameState.titleScreen, gameState.gameOver, gameState.paused, gameState.gameOverTime, handleStart, handleRestart, handlePauseToggle)
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', backgroundColor: '#000000' }}>
+      <MobileWarning />
       <Canvas shadows style={{ width: '100%', height: '100%' }}>
-        <GameContent 
+        <GameContent
           enemyHealth={gameState.enemyHealth}
           playerHealth={gameState.playerHealth}
           playerSpawn={spawns.player}
           enemySpawn={spawns.enemy}
           gameActive={gameState.gameActive}
           gameOver={gameState.gameOver}
-          onEnemyHealthChange={gameState.setEnemyHealth} 
+          onEnemyHealthChange={gameState.setEnemyHealth}
           onPlayerHealthChange={gameState.setPlayerHealth}
           onGameOver={gameState.handleGameOver}
           onPlayerApiReady={(api) => { gameState.playerApi.current = api }}
+          onEnemyPhysicsApiReady={(api) => { gameState.enemyApi.current = api }}
+          onWarningChange={setSubtitle}
         />
       </Canvas>
 
@@ -271,8 +289,10 @@ export default function GameScene() {
         position="right"
       />
       <ScoreDisplay playerWins={gameState.playerWins} enemyWins={gameState.enemyWins} />
+      <Subtitle text={subtitle} />
       {gameState.titleScreen && <TitleScreen />}
-      {gameState.gameOver && gameState.winner && <GameOver winner={gameState.winner} />}
+      {gameState.gameOver && gameState.winner && <GameOver winner={gameState.winner} gameOverTime={gameState.gameOverTime} />}
+      {gameState.paused && <PauseOverlay />}
     </div>
   )
 }
